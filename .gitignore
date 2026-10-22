@@ -1,0 +1,15 @@
+node_modules/
+.env
+.data/
+coverage/
+*.log
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.report-render*/
+.source-docx-render/
+MongoForm-第一阶段提交/
+MongoForm-第一阶段提交.zip
+.DS_Store
+Thumbs.db

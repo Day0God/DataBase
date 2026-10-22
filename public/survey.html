@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="填写 MongoForm 问卷">
+    <title>填写问卷 · MongoForm</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/styles.css">
+    <script type="module" src="/js/survey.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="/">
+        <span class="brand-mark">M</span>
+        <span>MongoForm</span>
+      </a>
+      <div class="header-actions">
+        <span class="user-chip"><span class="user-dot"></span><span data-user-name></span></span>
+        <button class="button ghost small" type="button" data-logout>退出</button>
+      </div>
+    </header>
+
+    <main class="page narrow">
+      <div id="surveyLoading" class="loading">正在打开问卷…</div>
+      <div id="surveyMessage" class="message-panel" hidden></div>
+      <div id="surveyContent" hidden>
+        <section class="survey-intro">
+          <p class="eyebrow" id="surveyKicker">Online questionnaire</p>
+          <h1 id="surveyTitle"></h1>
+          <p id="surveyDescription"></p>
+          <div class="survey-meta" id="surveyMeta"></div>
+        </section>
+
+        <section class="wizard" id="wizard" hidden>
+          <div class="meta-row small muted">
+            <span id="wizardProgressText">准备开始</span>
+            <span id="wizardDeadline"></span>
+          </div>
+          <progress class="progress-track" id="wizardProgress" max="1" value="0"></progress>
+          <div class="question-card" id="questionCard"></div>
+          <div class="form-error" id="answerError" hidden></div>
+          <div class="wizard-actions">
+            <button class="button ghost" id="backButton" type="button" hidden>← 上一题</button>
+            <div class="button-row">
+              <button class="button" id="nextButton" type="button">下一题 →</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="question-card completion" id="completion" hidden>
+          <div class="completion-symbol">✓</div>
+          <h2 id="completionTitle">回答已提交</h2>
+          <p class="muted" id="completionMessage">感谢你完成这份问卷。</p>
+          <a class="button secondary" href="/">返回首页</a>
+        </section>
+      </div>
+    </main>
+
+    <div class="toast" id="toast" hidden></div>
+  </body>
+</html>

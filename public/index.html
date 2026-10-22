@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="MongoForm 在线问卷系统">
+    <title>MongoForm · 在线问卷</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/styles.css">
+    <script type="module" src="/js/index.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="/">
+        <span class="brand-mark">M</span>
+        <span>MongoForm</span>
+      </a>
+      <div class="header-actions" id="memberActions" hidden>
+        <span class="user-chip"><span class="user-dot"></span><span data-user-name></span></span>
+        <button class="button ghost small" type="button" data-logout>退出</button>
+      </div>
+      <div class="header-actions" id="guestActions">
+        <button class="button ghost small" id="showLogin" type="button">登录</button>
+        <button class="button small" id="showRegister" type="button">免费注册</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="auth-layout" id="authView">
+        <div class="auth-copy">
+          <p class="eyebrow">Build · Share · Understand</p>
+          <h1>问题清楚，答案才有方向。</h1>
+          <p>创建一份随回答而变化的问卷，用一条链接收集真实反馈，并把每一次选择变成可读的数据。</p>
+          <div class="feature-line">
+            <span class="feature-pill">条件跳转</span>
+            <span class="feature-pill">精细校验</span>
+            <span class="feature-pill">实时统计</span>
+            <span class="feature-pill">MongoDB 持久化</span>
+          </div>
+        </div>
+
+        <div class="auth-card">
+          <div class="auth-tabs" role="tablist" aria-label="账号入口">
+            <button class="auth-tab active" id="loginTab" type="button" role="tab" aria-selected="true">登录</button>
+            <button class="auth-tab" id="registerTab" type="button" role="tab" aria-selected="false">注册</button>
+          </div>
+
+          <form class="form-stack" id="loginForm">
+            <div>
+              <p class="eyebrow">Welcome back</p>
+              <h2>回到你的问卷</h2>
+            </div>
+            <div class="form-error" id="loginError" hidden></div>
+            <div class="field">
+              <label for="loginUsername">用户名</label>
+              <input id="loginUsername" name="username" autocomplete="username" required minlength="3" maxlength="30">
+            </div>
+            <div class="field">
+              <label for="loginPassword">密码</label>
+              <input id="loginPassword" name="password" type="password" autocomplete="current-password" required minlength="8" maxlength="72">
+            </div>
+            <button class="button" type="submit">登录并继续</button>
+          </form>
+
+          <form class="form-stack" id="registerForm" hidden>
+            <div>
+              <p class="eyebrow">Create account</p>
+              <h2>新建账号</h2>
+            </div>
+            <div class="form-error" id="registerError" hidden></div>
+            <div class="field">
+              <label for="registerUsername">用户名</label>
+              <input id="registerUsername" name="username" autocomplete="username" required minlength="3" maxlength="30">
+              <span class="field-hint">3–30 个字符，可使用中文、字母、数字、下划线或短横线。</span>
+            </div>
+            <div class="field">
+              <label for="registerPassword">密码</label>
+              <input id="registerPassword" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72">
+              <span class="field-hint">至少 8 个字符。密码只会以哈希形式存储。</span>
+            </div>
+            <button class="button" type="submit">创建账号</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="page" id="dashboardView" hidden>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">My workspace</p>
+            <h1>我的问卷</h1>
+            <p class="muted">设计问题、发布链接，并在回答抵达时查看统计。</p>
+            <p class="account-meta">
+              账号 <strong id="dashboardUsername"></strong>
+              <span aria-hidden="true">·</span>
+              注册于 <time id="dashboardCreatedAt"></time>
+            </p>
+          </div>
+          <button class="button" id="newSurveyButton" type="button">＋ 新建问卷</button>
+        </div>
+        <div id="dashboardLoading" class="loading">正在读取问卷…</div>
+        <div id="surveyGrid" class="dashboard-grid" hidden></div>
+        <div id="surveyEmpty" class="empty-state" hidden>
+          <div>
+            <h3>还没有问卷</h3>
+            <p>从一张空白问卷开始，添加第一道问题。</p>
+            <button class="button" id="emptyCreateButton" type="button">创建第一份问卷</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="dialog-backdrop" id="createDialog" hidden>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="createDialogTitle">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">New survey</p>
+            <h2 id="createDialogTitle">创建一份问卷</h2>
+          </div>
+          <button class="icon-button" id="closeCreateDialog" type="button" aria-label="关闭">×</button>
+        </div>
+        <form class="form-stack" id="createSurveyForm">
+          <div class="form-error" id="createError" hidden></div>
+          <div class="field">
+            <label for="surveyTitle">问卷标题</label>
+            <input id="surveyTitle" name="title" required maxlength="120" placeholder="例如：课程体验反馈">
+          </div>
+          <div class="field">
+            <label for="surveyDescription">问卷说明</label>
+            <textarea id="surveyDescription" name="description" maxlength="2000" placeholder="告诉填写者这份问卷的用途"></textarea>
+          </div>
+          <label class="checkbox-row">
+            <input id="allowAnonymous" name="allowAnonymous" type="checkbox" checked>
+            <span>允许匿名填写<small class="field-hint">统计中不会记录填写者的账号身份。</small></span>
+          </label>
+          <label class="checkbox-row">
+            <input id="allowMultiple" name="allowMultipleResponses" type="checkbox">
+            <span>允许同一账号多次填写</span>
+          </label>
+          <div class="button-row">
+            <button class="button" type="submit">创建并编辑</button>
+            <button class="button secondary" id="cancelCreate" type="button">取消</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+  </body>
+</html>

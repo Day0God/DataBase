@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="查看 MongoForm 问卷统计">
+    <title>统计结果 · MongoForm</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/styles.css">
+    <script type="module" src="/js/stats.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="/">
+        <span class="brand-mark">M</span>
+        <span>MongoForm</span>
+      </a>
+      <div class="header-actions">
+        <a class="button ghost small" href="/">我的问卷</a>
+        <span class="user-chip"><span class="user-dot"></span><span data-user-name></span></span>
+        <button class="button ghost small" type="button" data-logout>退出</button>
+      </div>
+    </header>
+
+    <main class="page">
+      <div id="statsLoading" class="loading">正在汇总回答…</div>
+      <div id="statsMessage" class="message-panel" hidden></div>
+      <div id="statsContent" hidden>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">Response analytics</p>
+            <h1 id="statsTitle">问卷统计</h1>
+            <p class="muted" id="statsSubtitle"></p>
+          </div>
+          <div class="button-row">
+            <a class="button secondary" id="backBuilder" href="#">编辑问卷</a>
+            <button class="button secondary" id="refreshStats" type="button">刷新数据</button>
+          </div>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric">
+            <div class="metric-label">已提交回答</div>
+            <div class="metric-value" id="totalSubmissions">0</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">题目数量</div>
+            <div class="metric-value" id="questionCount">0</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">收集方式</div>
+            <div class="metric-value" id="collectionMode">—</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="field">
+            <label for="questionFilter">查看范围</label>
+            <select id="questionFilter">
+              <option value="all">整份问卷</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="section-title">
+          <div>
+            <h2>逐题分析</h2>
+            <p class="muted small" id="generatedAt"></p>
+          </div>
+        </div>
+        <div class="stat-list" id="statList"></div>
+        <div class="empty-state" id="statsEmpty" hidden>
+          <div>
+            <h3>还没有回答</h3>
+            <p>分享问卷链接，第一位填写者提交后这里会自动生成统计。</p>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <div class="toast" id="toast" hidden></div>
+  </body>
+</html>

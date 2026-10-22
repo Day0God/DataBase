@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="编辑 MongoForm 问卷">
+    <title>编辑问卷 · MongoForm</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/styles.css">
+    <script type="module" src="/js/builder.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="/">
+        <span class="brand-mark">M</span>
+        <span>MongoForm</span>
+      </a>
+      <div class="header-actions">
+        <a class="button ghost small" href="/">我的问卷</a>
+        <span class="user-chip"><span class="user-dot"></span><span data-user-name></span></span>
+        <button class="button ghost small" type="button" data-logout>退出</button>
+      </div>
+    </header>
+
+    <main class="page">
+      <div id="builderLoading" class="loading">正在读取问卷设计…</div>
+      <div id="builderMessage" class="message-panel" hidden></div>
+      <div id="builderContent" hidden>
+        <div class="survey-heading-bar">
+          <div>
+            <p class="eyebrow">Survey builder</p>
+            <h1 id="builderHeading">编辑问卷</h1>
+            <p class="muted" id="builderSubheading"></p>
+          </div>
+          <span class="status-pill" id="builderStatus"></span>
+        </div>
+
+        <div class="form-error" id="builderError" hidden></div>
+        <div class="notice" id="publishedNotice" hidden></div>
+
+        <div class="builder-shell">
+          <div class="builder-main">
+            <section class="panel">
+              <h3>问卷设置</h3>
+              <div class="form-stack">
+                <div class="field">
+                  <label for="builderTitle">问卷标题</label>
+                  <input id="builderTitle" maxlength="120" required>
+                </div>
+                <div class="field">
+                  <label for="builderDescription">问卷说明</label>
+                  <textarea id="builderDescription" maxlength="2000"></textarea>
+                </div>
+                <div class="two-columns">
+                  <div class="field">
+                    <label for="builderDeadline">截止时间</label>
+                    <input id="builderDeadline" type="datetime-local">
+                    <span class="field-hint">留空表示不限制。</span>
+                  </div>
+                  <div class="form-stack">
+                    <label class="checkbox-row">
+                      <input id="builderAnonymous" type="checkbox">
+                      <span>允许匿名填写</span>
+                    </label>
+                    <label class="checkbox-row">
+                      <input id="builderMultiple" type="checkbox">
+                      <span>允许同一账号多次填写</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div class="section-title">
+              <div>
+                <h2>题目设计</h2>
+                <p class="muted small">跳转目标只能选择当前题目之后的题目。</p>
+              </div>
+            </div>
+
+            <div class="question-toolbar" id="questionToolbar">
+              <button class="button secondary small" type="button" data-add-type="single">＋ 单选题</button>
+              <button class="button secondary small" type="button" data-add-type="multiple">＋ 多选题</button>
+              <button class="button secondary small" type="button" data-add-type="text">＋ 文本填空</button>
+              <button class="button secondary small" type="button" data-add-type="number">＋ 数字填空</button>
+            </div>
+            <div class="builder-main" id="questionList"></div>
+            <div class="empty-state" id="questionEmpty" hidden>
+              <div>
+                <h3>从一道题开始</h3>
+                <p>使用上方按钮添加单选题、多选题、文本或数字填空题。</p>
+              </div>
+            </div>
+          </div>
+
+          <aside class="builder-sidebar">
+            <section class="panel">
+              <h3>发布与操作</h3>
+              <div class="sidebar-actions">
+                <button class="button" id="saveButton" type="button">保存所有更改</button>
+                <button class="button secondary" id="publishButton" type="button">发布问卷</button>
+                <a class="button secondary" id="statsButton" href="#">查看统计</a>
+                <button class="button danger" id="closeButton" type="button">关闭问卷</button>
+              </div>
+            </section>
+            <section class="panel">
+              <h3>分享链接</h3>
+              <p class="field-hint" id="shareHint"></p>
+              <div class="public-link-box" id="publicLink">发布后生成可访问链接</div>
+              <div class="button-row" id="shareActions">
+                <button class="button secondary small" id="copyLinkButton" type="button">复制链接</button>
+                <a class="button secondary small" id="previewButton" href="#">预览</a>
+              </div>
+            </section>
+            <section class="panel">
+              <h3>设计提示</h3>
+              <p class="small muted">跳转规则按从上到下的顺序匹配，命中第一条后才会改变题目路径。未命中时按顺序进入下一题。</p>
+              <p class="small muted">题目保存后，服务端会再次校验选项、数值范围和跳转目标，不能只依赖浏览器校验。</p>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </main>
+
+    <div class="toast" id="toast" hidden></div>
+  </body>
+</html>
