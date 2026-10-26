@@ -262,3 +262,93 @@ MongoDB 将“题目 + 选项 + 条件”和“一次回答 + 答案列表”分
 - [`app/schema.py`](../app/schema.py)
 
 应用启动时会幂等执行集合校验器和索引初始化。
+
+## 8. 第二阶段题库与版本集合
+
+第二阶段保留原有五个集合，并新增：
+
+- `question_banks`：用户命名题库。
+- `library_questions`：可复用的逻辑题目、所有者、当前版本和共享对象。
+- `library_question_versions`：不可变版本快照与版本谱系。
+
+### `question_banks`
+
+```javascript
+{
+  _id: ObjectId,
+  ownerId: ObjectId,
+  name: "常用题目",
+  nameKey: "常用题目",
+  description: "",
+  createdAt: ISODate,
+  updatedAt: ISODate
+}
+```
+
+唯一索引 `{ ownerId: 1, nameKey: 1 }` 防止同一用户创建同名题库。
+`questions.libraryQuestionId + surveyId` 稀疏索引支持使用位置和跨问卷统计查询。
+
+### `library_questions`
+
+```javascript
+{
+  _id: ObjectId,
+  bankId: ObjectId,
+  ownerId: ObjectId,
+  type: "single" | "multiple" | "text" | "number",
+  currentVersionId: ObjectId,
+  currentVersionNumber: 3,
+  sharedWith: [ObjectId],
+  createdAt: ISODate,
+  updatedAt: ISODate
+}
+```
+
+逻辑题目只保存稳定身份、当前版本和共享关系，具体题目内容位于版本文档。
+
+索引：
+
+```javascript
+{ ownerId: 1, updatedAt: -1 }
+{ bankId: 1, updatedAt: -1 }
+{ sharedWith: 1, updatedAt: -1 }
+```
+
+### `library_question_versions`
+
+```javascript
+{
+  _id: ObjectId,
+  questionId: ObjectId,
+  versionNumber: 3,
+  parentVersionId: ObjectId | null,
+  restoredFromVersionId: ObjectId | null,
+  snapshot: {
+    title: "你的年龄是？",
+    type: "number",
+    required: true,
+    options: [],
+    validation: { min: 0, max: 120, integer: true }
+  },
+  changeSummary: "恢复自 v1",
+  createdBy: ObjectId,
+  createdAt: ISODate
+}
+```
+
+版本号唯一索引确保并发请求不能创建同一题目的重复版本。
+
+### 问卷题目快照
+
+`questions` 增加可选字段：
+
+```javascript
+{
+  libraryQuestionId: ObjectId,
+  libraryVersionId: ObjectId,
+  libraryVersionNumber: Number,
+  libraryOwnerId: ObjectId
+}
+```
+
+问卷仍保存完整题目内容，不保存题库实时引用。新增字段只用于来源追溯和使用统计，因此第一阶段题目无需迁移，题库升级也不会改变旧问卷。

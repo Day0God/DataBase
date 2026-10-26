@@ -1,6 +1,7 @@
 import math
 import re
 import secrets
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 
@@ -25,6 +26,7 @@ from .security import (
 )
 from .validation import (
     evaluate_submission,
+    new_question_id,
     normalize_questions,
     validate_survey_fields,
 )
@@ -67,7 +69,7 @@ def public_user(user):
 
 
 def public_question(question):
-    return {
+    result = {
         "id": question["id"],
         "type": question["type"],
         "title": question["title"],
@@ -77,6 +79,15 @@ def public_question(question):
         "validation": question.get("validation", {}),
         "jumps": question.get("jumps", []),
     }
+    if question.get("libraryQuestionId"):
+        result.update(
+            {
+                "libraryQuestionId": str(question["libraryQuestionId"]),
+                "libraryVersionId": str(question["libraryVersionId"]),
+                "libraryVersionNumber": question["libraryVersionNumber"],
+            }
+        )
+    return result
 
 
 def questions_for_survey(survey_id):
@@ -121,6 +132,747 @@ def has_submissions(survey_id):
         )
         is not None
     )
+
+
+def library_name_key(value):
+    return unicodedata.normalize("NFKC", str(value or "")).strip().casefold()
+
+
+def normalize_library_snapshot(raw_question):
+    raw_question = raw_question if isinstance(raw_question, dict) else {}
+    candidate = {
+        **raw_question,
+        "id": new_question_id(),
+        "order": 0,
+        "jumps": [],
+    }
+    normalized = normalize_questions([candidate])[0]
+    return {
+        "title": normalized["title"],
+        "type": normalized["type"],
+        "required": normalized["required"],
+        "options": normalized["options"],
+        "validation": normalized["validation"],
+    }
+
+
+def library_version_public(version):
+    return {
+        "id": str(version["_id"]),
+        "versionNumber": version["versionNumber"],
+        "parentVersionId": (
+            str(version["parentVersionId"])
+            if version.get("parentVersionId")
+            else None
+        ),
+        "restoredFromVersionId": (
+            str(version["restoredFromVersionId"])
+            if version.get("restoredFromVersionId")
+            else None
+        ),
+        "snapshot": version["snapshot"],
+        "changeSummary": version.get("changeSummary", ""),
+        "createdAt": version["createdAt"],
+    }
+
+
+def library_question_for_access(question_id_input, owner_only=False):
+    question_id = object_id(question_id_input, "题库题目")
+    question = db().library_questions.find_one(
+        {
+            "_id": question_id,
+            "$or": [
+                {"ownerId": g.current_user["_id"]},
+                {"sharedWith": g.current_user["_id"]},
+            ],
+        }
+    )
+    if not question:
+        raise ApiError(404, "NOT_FOUND", "题库题目不存在")
+    if owner_only and question["ownerId"] != g.current_user["_id"]:
+        raise ApiError(403, "FORBIDDEN", "只有题目所有者可以执行此操作")
+    return question
+
+
+def library_question_summary(question):
+    version = db().library_question_versions.find_one(
+        {"_id": question["currentVersionId"]}
+    )
+    if not version:
+        raise ApiError(500, "INVALID_LIBRARY_STATE", "题目版本数据不完整")
+    bank = db().question_banks.find_one({"_id": question["bankId"]})
+    owner = db().users.find_one({"_id": question["ownerId"]}, {"username": 1})
+    is_owner = question["ownerId"] == g.current_user["_id"]
+    return {
+        "id": str(question["_id"]),
+        "bankId": str(question["bankId"]),
+        "bankName": bank["name"] if bank else "已删除题库",
+        "ownerId": str(question["ownerId"]),
+        "ownerUsername": owner["username"] if owner else "未知用户",
+        "isOwner": is_owner,
+        "isShared": not is_owner,
+        "canEdit": is_owner,
+        "sharedWithCount": len(question.get("sharedWith", [])),
+        "currentVersion": library_version_public(version),
+        "createdAt": question["createdAt"],
+        "updatedAt": question["updatedAt"],
+    }
+
+
+def attach_library_references(normalized_questions, raw_questions):
+    if not isinstance(raw_questions, list):
+        return
+    for question, raw_question in zip(normalized_questions, raw_questions):
+        raw_question = raw_question if isinstance(raw_question, dict) else {}
+        library_id = raw_question.get("libraryQuestionId")
+        version_id = raw_question.get("libraryVersionId")
+        if not library_id or not version_id:
+            continue
+        try:
+            library_question = library_question_for_access(
+                library_id,
+                owner_only=False,
+            )
+            version = db().library_question_versions.find_one(
+                {
+                    "_id": ObjectId(version_id),
+                    "questionId": library_question["_id"],
+                }
+            )
+        except (ApiError, InvalidId, TypeError):
+            continue
+        if not version:
+            continue
+        snapshot = version["snapshot"]
+        unchanged = all(
+            question.get(field) == snapshot.get(field)
+            for field in ("title", "type", "required", "options", "validation")
+        )
+        if not unchanged or question["jumps"]:
+            continue
+        question.update(
+            {
+                "libraryQuestionId": library_question["_id"],
+                "libraryVersionId": version["_id"],
+                "libraryVersionNumber": version["versionNumber"],
+                "libraryOwnerId": library_question["ownerId"],
+            }
+        )
+
+
+def accessible_bank(bank_id_input):
+    bank_id = object_id(bank_id_input, "题库")
+    bank = db().question_banks.find_one(
+        {"_id": bank_id, "ownerId": g.current_user["_id"]}
+    )
+    if not bank:
+        raise ApiError(404, "NOT_FOUND", "题库不存在")
+    return bank
+
+
+def ensure_default_bank():
+    existing = db().question_banks.find_one(
+        {"ownerId": g.current_user["_id"]},
+        sort=[("createdAt", 1)],
+    )
+    if existing:
+        return existing
+    now = datetime.now(timezone.utc)
+    bank = {
+        "ownerId": g.current_user["_id"],
+        "name": "我的题库",
+        "nameKey": library_name_key("我的题库"),
+        "description": "用于保存可复用的问卷题目",
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    try:
+        inserted = db().question_banks.insert_one(bank)
+    except DuplicateKeyError:
+        return db().question_banks.find_one(
+            {"ownerId": g.current_user["_id"]},
+            sort=[("createdAt", 1)],
+        )
+    bank["_id"] = inserted.inserted_id
+    return bank
+
+
+def bank_public(bank):
+    return {
+        "id": str(bank["_id"]),
+        "name": bank["name"],
+        "description": bank["description"],
+        "questionCount": db().library_questions.count_documents(
+            {"bankId": bank["_id"], "ownerId": g.current_user["_id"]}
+        ),
+        "createdAt": bank["createdAt"],
+        "updatedAt": bank["updatedAt"],
+    }
+
+
+def question_values(question_documents):
+    if not question_documents:
+        return [], 0
+    question_ids = [question["id"] for question in question_documents]
+    survey_ids = list(
+        {question["surveyId"] for question in question_documents}
+    )
+    match = {
+        "surveyId": {"$in": survey_ids},
+        "answers.questionId": {"$in": question_ids},
+    }
+    rows = list(
+        db().submissions.aggregate(
+            [
+                {"$match": match},
+                {"$unwind": "$answers"},
+                {"$match": {"answers.questionId": {"$in": question_ids}}},
+                {
+                    "$group": {
+                        "_id": None,
+                        "values": {"$push": "$answers.value"},
+                        "submissionIds": {"$addToSet": "$_id"},
+                    }
+                },
+            ]
+        )
+    )
+    if not rows:
+        return [], 0
+    return rows[0]["values"], len(rows[0]["submissionIds"])
+
+
+def summarize_question_values(snapshot, values):
+    result = {
+        "type": snapshot["type"],
+        "answeredCount": len(values),
+    }
+    if snapshot["type"] in {"single", "multiple"}:
+        counts = {}
+        for value in values:
+            selected = value if isinstance(value, list) else [value]
+            for option_id in selected:
+                counts[option_id] = counts.get(option_id, 0) + 1
+        result["options"] = [
+            {
+                **option,
+                "count": counts.get(option["id"], 0),
+                "percentage": round(
+                    counts.get(option["id"], 0) * 100 / len(values),
+                    1,
+                )
+                if values
+                else 0,
+            }
+            for option in snapshot.get("options", [])
+        ]
+    elif snapshot["type"] == "number":
+        numbers = [
+            value for value in values if isinstance(value, (int, float))
+        ]
+        result["numeric"] = {
+            "average": round(sum(numbers) / len(numbers), 2)
+            if numbers
+            else None,
+            "min": min(numbers) if numbers else None,
+            "max": max(numbers) if numbers else None,
+            "values": numbers,
+        }
+    else:
+        result["textValues"] = values
+    return result
+
+
+def statistics_snapshot(current_snapshot, question_documents):
+    if current_snapshot["type"] not in {"single", "multiple"}:
+        return current_snapshot
+    options = {}
+    for option in current_snapshot.get("options", []):
+        options[option["id"]] = option
+    for document in question_documents:
+        for option in document.get("options", []):
+            options.setdefault(option["id"], option)
+    return {**current_snapshot, "options": list(options.values())}
+
+
+@api.get("/question-banks")
+@require_auth
+def list_question_banks():
+    ensure_default_bank()
+    banks = list(
+        db().question_banks.find(
+            {"ownerId": g.current_user["_id"]}
+        ).sort("createdAt", 1)
+    )
+    return ok([bank_public(bank) for bank in banks])
+
+
+@api.post("/question-banks")
+@require_auth
+def create_question_bank():
+    data = json_body()
+    name = str(data.get("name", "")).strip()
+    description = str(data.get("description", "")).strip()
+    ensure(
+        1 <= len(name) <= 60,
+        422,
+        "VALIDATION_ERROR",
+        "题库名称应为 1 到 60 个字符",
+    )
+    ensure(
+        len(description) <= 500,
+        422,
+        "VALIDATION_ERROR",
+        "题库说明不能超过 500 个字符",
+    )
+    now = datetime.now(timezone.utc)
+    bank = {
+        "ownerId": g.current_user["_id"],
+        "name": name,
+        "nameKey": library_name_key(name),
+        "description": description,
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    try:
+        inserted = db().question_banks.insert_one(bank)
+    except DuplicateKeyError:
+        raise ApiError(409, "BANK_NAME_TAKEN", "同名题库已存在") from None
+    bank["_id"] = inserted.inserted_id
+    return ok(bank_public(bank), 201)
+
+
+@api.patch("/question-banks/<bank_id>")
+@require_auth
+def update_question_bank(bank_id):
+    bank = accessible_bank(bank_id)
+    data = json_body()
+    fields = {}
+    if "name" in data:
+        name = str(data.get("name", "")).strip()
+        ensure(
+            1 <= len(name) <= 60,
+            422,
+            "VALIDATION_ERROR",
+            "题库名称应为 1 到 60 个字符",
+        )
+        fields.update({"name": name, "nameKey": library_name_key(name)})
+    if "description" in data:
+        description = str(data.get("description", "")).strip()
+        ensure(
+            len(description) <= 500,
+            422,
+            "VALIDATION_ERROR",
+            "题库说明不能超过 500 个字符",
+        )
+        fields["description"] = description
+    ensure(fields, 422, "VALIDATION_ERROR", "没有可更新的字段")
+    fields["updatedAt"] = datetime.now(timezone.utc)
+    try:
+        updated = db().question_banks.find_one_and_update(
+            {"_id": bank["_id"], "ownerId": g.current_user["_id"]},
+            {"$set": fields},
+            return_document=True,
+        )
+    except DuplicateKeyError:
+        raise ApiError(409, "BANK_NAME_TAKEN", "同名题库已存在") from None
+    return ok(bank_public(updated))
+
+
+@api.get("/library-questions")
+@require_auth
+def list_library_questions():
+    scope = request.args.get("scope", "all")
+    ensure(
+        scope in {"all", "own", "shared"},
+        422,
+        "VALIDATION_ERROR",
+        "题库范围无效",
+    )
+    if scope == "own":
+        access_query = {"ownerId": g.current_user["_id"]}
+    elif scope == "shared":
+        access_query = {"sharedWith": g.current_user["_id"]}
+    else:
+        access_query = {
+            "$or": [
+                {"ownerId": g.current_user["_id"]},
+                {"sharedWith": g.current_user["_id"]},
+            ]
+        }
+    query = access_query
+    bank_id = request.args.get("bankId")
+    if bank_id:
+        query = {
+            "$and": [
+                access_query,
+                {"bankId": object_id(bank_id, "题库")},
+            ]
+        }
+    questions = list(
+        db().library_questions.find(query).sort("updatedAt", -1)
+    )
+    return ok([library_question_summary(question) for question in questions])
+
+
+@api.post("/library-questions")
+@require_auth
+def create_library_question():
+    data = json_body()
+    bank_id = data.get("bankId")
+    bank = accessible_bank(bank_id) if bank_id else ensure_default_bank()
+    snapshot = normalize_library_snapshot(data.get("question", data))
+    now = datetime.now(timezone.utc)
+    question_id = ObjectId()
+    version_id = ObjectId()
+    version = {
+        "_id": version_id,
+        "questionId": question_id,
+        "versionNumber": 1,
+        "parentVersionId": None,
+        "restoredFromVersionId": None,
+        "snapshot": snapshot,
+        "changeSummary": (
+            str(data.get("changeSummary", "")).strip() or "创建题目"
+        )[:300],
+        "createdBy": g.current_user["_id"],
+        "createdAt": now,
+    }
+    db().library_question_versions.insert_one(version)
+    question = {
+        "_id": question_id,
+        "bankId": bank["_id"],
+        "ownerId": g.current_user["_id"],
+        "type": snapshot["type"],
+        "currentVersionId": version_id,
+        "currentVersionNumber": 1,
+        "sharedWith": [],
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    try:
+        db().library_questions.insert_one(question)
+    except Exception:
+        db().library_question_versions.delete_one({"_id": version_id})
+        raise
+    return ok(library_question_summary(question), 201)
+
+
+@api.get("/library-questions/<question_id>")
+@require_auth
+def get_library_question(question_id):
+    question = library_question_for_access(question_id)
+    versions = list(
+        db().library_question_versions.find(
+            {"questionId": question["_id"]}
+        ).sort("versionNumber", 1)
+    )
+    return ok(
+        {
+            "question": library_question_summary(question),
+            "versions": [
+                library_version_public(version) for version in versions
+            ],
+        }
+    )
+
+
+@api.post("/library-questions/<question_id>/versions")
+@require_auth
+def create_library_question_version(question_id):
+    question = library_question_for_access(question_id, owner_only=True)
+    data = json_body()
+    base_version_id = data.get("baseVersionId") or question["currentVersionId"]
+    base_version = db().library_question_versions.find_one(
+        {
+            "_id": object_id(base_version_id, "题目版本"),
+            "questionId": question["_id"],
+        }
+    )
+    if not base_version:
+        raise ApiError(404, "NOT_FOUND", "题目版本不存在")
+    candidate = data.get("snapshot") or data.get("question") or base_version[
+        "snapshot"
+    ]
+    snapshot = normalize_library_snapshot(candidate)
+    ensure(
+        snapshot["type"] == question["type"],
+        422,
+        "LIBRARY_TYPE_IMMUTABLE",
+        "同一题目的历史版本不能改变题型",
+    )
+    now = datetime.now(timezone.utc)
+    current = db().library_questions.find_one({"_id": question["_id"]})
+    next_number = int(current["currentVersionNumber"]) + 1
+    version_id = ObjectId()
+    version = {
+        "_id": version_id,
+        "questionId": question["_id"],
+        "versionNumber": next_number,
+        "parentVersionId": base_version["_id"],
+        "restoredFromVersionId": None,
+        "snapshot": snapshot,
+        "changeSummary": (
+            str(data.get("changeSummary", "")).strip()
+            or f"基于 v{base_version['versionNumber']} 创建新版本"
+        )[:300],
+        "createdBy": g.current_user["_id"],
+        "createdAt": now,
+    }
+    try:
+        db().library_question_versions.insert_one(version)
+    except DuplicateKeyError:
+        raise ApiError(
+            409,
+            "LIBRARY_VERSION_CONFLICT",
+            "题目版本已被其他操作更新，请刷新后重试",
+        ) from None
+    result = db().library_questions.update_one(
+        {
+            "_id": question["_id"],
+            "ownerId": g.current_user["_id"],
+            "currentVersionId": current["currentVersionId"],
+        },
+        {
+            "$set": {
+                "currentVersionId": version_id,
+                "currentVersionNumber": next_number,
+                "updatedAt": now,
+            }
+        },
+    )
+    if result.modified_count != 1:
+        db().library_question_versions.delete_one({"_id": version_id})
+        raise ApiError(
+            409,
+            "LIBRARY_VERSION_CONFLICT",
+            "题目版本已被其他操作更新，请刷新后重试",
+        )
+    question["currentVersionId"] = version_id
+    question["currentVersionNumber"] = next_number
+    question["updatedAt"] = now
+    return ok(library_question_summary(question), 201)
+
+
+@api.post("/library-questions/<question_id>/restore")
+@require_auth
+def restore_library_question_version(question_id):
+    question = library_question_for_access(question_id, owner_only=True)
+    data = json_body()
+    source_version = db().library_question_versions.find_one(
+        {
+            "_id": object_id(data.get("versionId"), "题目版本"),
+            "questionId": question["_id"],
+        }
+    )
+    if not source_version:
+        raise ApiError(404, "NOT_FOUND", "要恢复的题目版本不存在")
+    now = datetime.now(timezone.utc)
+    next_number = int(question["currentVersionNumber"]) + 1
+    version_id = ObjectId()
+    version = {
+        "_id": version_id,
+        "questionId": question["_id"],
+        "versionNumber": next_number,
+        "parentVersionId": question["currentVersionId"],
+        "restoredFromVersionId": source_version["_id"],
+        "snapshot": source_version["snapshot"],
+        "changeSummary": (
+            str(data.get("changeSummary", "")).strip()
+            or f"恢复自 v{source_version['versionNumber']}"
+        )[:300],
+        "createdBy": g.current_user["_id"],
+        "createdAt": now,
+    }
+    try:
+        db().library_question_versions.insert_one(version)
+    except DuplicateKeyError:
+        raise ApiError(
+            409,
+            "LIBRARY_VERSION_CONFLICT",
+            "题目版本已被其他操作更新，请刷新后重试",
+        ) from None
+    result = db().library_questions.update_one(
+        {
+            "_id": question["_id"],
+            "currentVersionId": question["currentVersionId"],
+        },
+        {
+            "$set": {
+                "currentVersionId": version_id,
+                "currentVersionNumber": next_number,
+                "updatedAt": now,
+            }
+        },
+    )
+    if result.modified_count != 1:
+        db().library_question_versions.delete_one({"_id": version_id})
+        raise ApiError(
+            409,
+            "LIBRARY_VERSION_CONFLICT",
+            "题目版本已被其他操作更新，请刷新后重试",
+        )
+    question["currentVersionId"] = version_id
+    question["currentVersionNumber"] = next_number
+    question["updatedAt"] = now
+    return ok(library_question_summary(question), 201)
+
+
+@api.post("/library-questions/<question_id>/share")
+@require_auth
+def share_library_question(question_id):
+    question = library_question_for_access(question_id, owner_only=True)
+    username = str(json_body().get("username", "")).strip()
+    recipient = db().users.find_one({"usernameKey": username_key(username)})
+    if not recipient:
+        raise ApiError(404, "NOT_FOUND", "要共享的用户不存在")
+    if recipient["_id"] == g.current_user["_id"]:
+        raise ApiError(422, "VALIDATION_ERROR", "不能共享给自己")
+    now = datetime.now(timezone.utc)
+    db().library_questions.update_one(
+        {"_id": question["_id"], "ownerId": g.current_user["_id"]},
+        {
+            "$addToSet": {"sharedWith": recipient["_id"]},
+            "$set": {"updatedAt": now},
+        },
+    )
+    return ok(
+        {
+            "questionId": str(question["_id"]),
+            "recipient": public_user(recipient),
+        }
+    )
+
+
+@api.delete("/library-questions/<question_id>/share/<user_id>")
+@require_auth
+def unshare_library_question(question_id, user_id):
+    question = library_question_for_access(question_id, owner_only=True)
+    recipient_id = object_id(user_id, "用户")
+    db().library_questions.update_one(
+        {"_id": question["_id"], "ownerId": g.current_user["_id"]},
+        {
+            "$pull": {"sharedWith": recipient_id},
+            "$set": {"updatedAt": datetime.now(timezone.utc)},
+        },
+    )
+    return ok({"questionId": str(question["_id"]), "removed": True})
+
+
+@api.get("/library-questions/<question_id>/usages")
+@require_auth
+def library_question_usages(question_id):
+    question = library_question_for_access(question_id)
+    is_owner = question["ownerId"] == g.current_user["_id"]
+    survey_filter = {} if is_owner else {"ownerId": g.current_user["_id"]}
+    survey_ids = [row["_id"] for row in db().surveys.find(survey_filter, {"_id": 1})]
+    usages = []
+    if survey_ids:
+        documents = list(
+            db().questions.find(
+                {
+                    "libraryQuestionId": question["_id"],
+                    "surveyId": {"$in": survey_ids},
+                }
+            ).sort("surveyId", 1)
+        )
+        surveys = {
+            survey["_id"]: survey
+            for survey in db().surveys.find(
+                {"_id": {"$in": list({item["surveyId"] for item in documents})}}
+            )
+        }
+        usages = [
+            {
+                "surveyId": str(document["surveyId"]),
+                "surveyTitle": surveys[document["surveyId"]]["title"],
+                "surveyStatus": surveys[document["surveyId"]]["status"],
+                "questionId": document["id"],
+                "libraryVersionId": (
+                    str(document["libraryVersionId"])
+                    if document.get("libraryVersionId")
+                    else None
+                ),
+                "libraryVersionNumber": document.get(
+                    "libraryVersionNumber"
+                ),
+            }
+            for document in documents
+            if document["surveyId"] in surveys
+        ]
+    return ok(
+        {
+            "questionId": str(question["_id"]),
+            "totalUsages": len(usages),
+            "scope": (
+                "题目所有者可查看全部使用位置"
+                if is_owner
+                else "共享用户仅查看自己拥有的问卷"
+            ),
+            "usages": usages,
+        }
+    )
+
+
+@api.get("/library-questions/<question_id>/stats")
+@require_auth
+def library_question_stats(question_id):
+    question = library_question_for_access(question_id)
+    survey_ids = [
+        row["_id"]
+        for row in db().surveys.find(
+            {"ownerId": g.current_user["_id"]}, {"_id": 1}
+        )
+    ]
+    version_value = request.args.get("versionId")
+    version_id = (
+        object_id(version_value, "题目版本") if version_value else None
+    )
+    documents = []
+    if survey_ids:
+        documents = list(
+            db().questions.find(
+                {
+                    "libraryQuestionId": question["_id"],
+                    "surveyId": {"$in": survey_ids},
+                    **(
+                        {"libraryVersionId": version_id}
+                        if version_id is not None
+                        else {}
+                    ),
+                }
+            )
+        )
+    current = db().library_question_versions.find_one(
+        {"_id": question["currentVersionId"]}
+    )
+    values, total_submissions = question_values(documents)
+    summary = summarize_question_values(
+        statistics_snapshot(current["snapshot"], documents),
+        values,
+    )
+    summary.update(
+        {
+            "question": library_question_summary(question),
+            "versionFilter": (
+                str(version_id) if version_id is not None else "all"
+            ),
+            "versionsIncluded": sorted(
+                {
+                    int(document["libraryVersionNumber"])
+                    for document in documents
+                    if document.get("libraryVersionNumber")
+                }
+            ),
+            "surveyUsageCount": len(
+                {document["surveyId"] for document in documents}
+            ),
+            "totalSubmissions": total_submissions,
+            "scope": "仅汇总当前用户拥有的问卷",
+            "generatedAt": datetime.now(timezone.utc),
+        }
+    )
+    return ok(summary)
 
 
 @api.get("/health")
@@ -301,7 +1053,9 @@ def save_questions(survey_id):
         "SURVEY_HAS_RESPONSES",
         "已有回答的问卷不能修改题目",
     )
-    questions = normalize_questions(json_body().get("questions"))
+    raw_questions = json_body().get("questions")
+    questions = normalize_questions(raw_questions)
+    attach_library_references(questions, raw_questions)
     now = datetime.now(timezone.utc)
     documents = [
         {**question, "surveyId": survey["_id"], "createdAt": now}

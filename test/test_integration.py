@@ -86,6 +86,9 @@ class IntegrationTests(unittest.TestCase):
         self.db.surveys.delete_many({})
         self.db.questions.delete_many({})
         self.db.submissions.delete_many({})
+        self.db.question_banks.delete_many({})
+        self.db.library_questions.delete_many({})
+        self.db.library_question_versions.delete_many({})
         self.owner = self.app.test_client()
         self.respondent = self.app.test_client()
 
@@ -138,6 +141,274 @@ class IntegrationTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.get_json())
         return survey
+
+    def create_library_number_question(self, title="你的年龄"):
+        banks = self.owner.get("/api/question-banks")
+        self.assertEqual(banks.status_code, 200, banks.get_json())
+        bank = banks.get_json()["data"][0]
+        response = self.post(
+            self.owner,
+            "/api/library-questions",
+            {
+                "bankId": bank["id"],
+                "question": {
+                    "type": "number",
+                    "title": title,
+                    "required": True,
+                    "validation": {"min": 0, "max": 120, "integer": True},
+                },
+                "changeSummary": "创建共用年龄题",
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.get_json())
+        return response.get_json()["data"]
+
+    def create_survey_with_library_question(
+        self,
+        client,
+        title,
+        library_question,
+        survey_question_id,
+    ):
+        created = self.post(
+            client,
+            "/api/surveys",
+            {
+                "title": title,
+                "description": "使用题库题目",
+                "allowAnonymous": True,
+                "allowMultipleResponses": False,
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.get_json())
+        survey = created.get_json()["data"]
+        snapshot = library_question["currentVersion"]["snapshot"]
+        version = library_question["currentVersion"]
+        question = {
+            **snapshot,
+            "id": survey_question_id,
+            "order": 0,
+            "jumps": [],
+            "libraryQuestionId": library_question["id"],
+            "libraryVersionId": version["id"],
+            "libraryVersionNumber": version["versionNumber"],
+        }
+        saved = self.put(
+            client,
+            f"/api/surveys/{survey['id']}/questions",
+            {"questions": [question]},
+        )
+        self.assertEqual(saved.status_code, 200, saved.get_json())
+        published = self.post(
+            client,
+            f"/api/surveys/{survey['id']}/publish",
+        )
+        self.assertEqual(published.status_code, 200, published.get_json())
+        return survey, saved.get_json()["data"][0]
+
+    def test_library_question_sharing_and_version_permissions(self):
+        self.assertEqual(self.register(self.owner, "library_owner").status_code, 201)
+        library = self.create_library_number_question()
+        self.assertEqual(library["currentVersion"]["versionNumber"], 1)
+
+        colleague = self.app.test_client()
+        self.assertEqual(self.register(colleague, "colleague").status_code, 201)
+        self.assertEqual(
+            colleague.get("/api/library-questions?scope=shared")
+            .get_json()["data"],
+            [],
+        )
+        shared = self.post(
+            self.owner,
+            f"/api/library-questions/{library['id']}/share",
+            {"username": "colleague"},
+        )
+        self.assertEqual(shared.status_code, 200, shared.get_json())
+
+        shared_list = colleague.get("/api/library-questions?scope=shared")
+        self.assertEqual(shared_list.status_code, 200)
+        shared_question = shared_list.get_json()["data"][0]
+        self.assertEqual(shared_question["id"], library["id"])
+        self.assertFalse(shared_question["canEdit"])
+        self.assertTrue(shared_question["isShared"])
+        library_page = colleague.get("/library")
+        self.assertEqual(library_page.status_code, 200)
+        self.assertIn(b"/js/library.js", library_page.data)
+        library_page.close()
+
+        denied = self.post(
+            colleague,
+            f"/api/library-questions/{library['id']}/versions",
+            {"changeSummary": "不应成功"},
+        )
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(
+            denied.get_json()["error"]["code"],
+            "FORBIDDEN",
+        )
+        shared_survey, shared_snapshot = self.create_survey_with_library_question(
+            colleague,
+            "同事使用共享题目",
+            shared_question,
+            "q_shared0001",
+        )
+        self.assertEqual(
+            shared_snapshot["libraryQuestionId"],
+            library["id"],
+        )
+        detail = colleague.get(f"/api/surveys/{shared_survey['id']}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(
+            detail.get_json()["data"]["questions"][0]["libraryVersionNumber"],
+            1,
+        )
+
+    def test_library_versions_preserve_survey_snapshots_and_lineage(self):
+        self.assertEqual(self.register(self.owner, "version_owner").status_code, 201)
+        library = self.create_library_number_question("年龄原题")
+        first_survey, first_question = self.create_survey_with_library_question(
+            self.owner,
+            "旧版问卷",
+            library,
+            "q_library001",
+        )
+        self.assertEqual(first_question["libraryVersionNumber"], 1)
+
+        snapshot_v2 = {
+            **library["currentVersion"]["snapshot"],
+            "title": "年龄新版",
+            "validation": {"min": 18, "max": 120, "integer": True},
+        }
+        version_response = self.post(
+            self.owner,
+            f"/api/library-questions/{library['id']}/versions",
+            {
+                "baseVersionId": library["currentVersion"]["id"],
+                "snapshot": snapshot_v2,
+                "changeSummary": "限制为成年人",
+            },
+        )
+        self.assertEqual(version_response.status_code, 201)
+        library_v2 = version_response.get_json()["data"]
+        self.assertEqual(library_v2["currentVersion"]["versionNumber"], 2)
+        self.assertEqual(
+            library_v2["currentVersion"]["parentVersionId"],
+            library["currentVersion"]["id"],
+        )
+
+        second_survey, second_question = self.create_survey_with_library_question(
+            self.owner,
+            "新版问卷",
+            library_v2,
+            "q_library002",
+        )
+        self.assertEqual(second_question["libraryVersionNumber"], 2)
+
+        first_detail = self.owner.get(f"/api/surveys/{first_survey['id']}")
+        self.assertEqual(first_detail.status_code, 200)
+        old_question = first_detail.get_json()["data"]["questions"][0]
+        self.assertEqual(old_question["title"], "年龄原题")
+        self.assertEqual(old_question["libraryVersionNumber"], 1)
+
+        detail = self.owner.get(
+            f"/api/library-questions/{library['id']}"
+        )
+        self.assertEqual(detail.status_code, 200)
+        versions = detail.get_json()["data"]["versions"]
+        self.assertEqual([item["versionNumber"] for item in versions], [1, 2])
+        self.assertEqual(versions[1]["parentVersionId"], versions[0]["id"])
+
+        restored = self.post(
+            self.owner,
+            f"/api/library-questions/{library['id']}/restore",
+            {"versionId": versions[0]["id"]},
+        )
+        self.assertEqual(restored.status_code, 201)
+        restored_question = restored.get_json()["data"]
+        self.assertEqual(
+            restored_question["currentVersion"]["versionNumber"],
+            3,
+        )
+        self.assertEqual(
+            restored_question["currentVersion"]["restoredFromVersionId"],
+            versions[0]["id"],
+        )
+        self.assertEqual(
+            restored_question["currentVersion"]["snapshot"]["title"],
+            "年龄原题",
+        )
+
+        usages = self.owner.get(
+            f"/api/library-questions/{library['id']}/usages"
+        )
+        self.assertEqual(usages.status_code, 200)
+        usage_data = usages.get_json()["data"]
+        self.assertEqual(usage_data["totalUsages"], 2)
+        self.assertEqual(
+            {item["surveyId"] for item in usage_data["usages"]},
+            {first_survey["id"], second_survey["id"]},
+        )
+
+    def test_library_question_cross_survey_statistics(self):
+        self.assertEqual(self.register(self.owner, "stats_owner").status_code, 201)
+        library = self.create_library_number_question("跨卷年龄")
+        first_survey, _ = self.create_survey_with_library_question(
+            self.owner,
+            "年龄问卷 A",
+            library,
+            "q_cross00001",
+        )
+        version_response = self.post(
+            self.owner,
+            f"/api/library-questions/{library['id']}/versions",
+            {
+                "snapshot": {
+                    **library["currentVersion"]["snapshot"],
+                    "title": "跨卷年龄 v2",
+                },
+                "changeSummary": "调整显示文字",
+            },
+        )
+        self.assertEqual(version_response.status_code, 201)
+        library_v2 = version_response.get_json()["data"]
+        second_survey, _ = self.create_survey_with_library_question(
+            self.owner,
+            "年龄问卷 B",
+            library_v2,
+            "q_cross00002",
+        )
+
+        respondent_a = self.app.test_client()
+        respondent_b = self.app.test_client()
+        self.assertEqual(self.register(respondent_a, "age_user_a").status_code, 201)
+        self.assertEqual(self.register(respondent_b, "age_user_b").status_code, 201)
+        for client, survey, question_id, value, key in (
+            (respondent_a, first_survey, "q_cross00001", 20, "cross-a-0001"),
+            (respondent_b, second_survey, "q_cross00002", 30, "cross-b-0001"),
+        ):
+            submitted = self.post(
+                client,
+                f"/api/public/surveys/{survey['slug']}/submit",
+                {
+                    "idempotencyKey": key,
+                    "answers": [
+                        {"questionId": question_id, "value": value}
+                    ],
+                },
+            )
+            self.assertEqual(submitted.status_code, 201, submitted.get_json())
+
+        stats = self.owner.get(
+            f"/api/library-questions/{library['id']}/stats"
+        )
+        self.assertEqual(stats.status_code, 200, stats.get_json())
+        data = stats.get_json()["data"]
+        self.assertEqual(data["totalSubmissions"], 2)
+        self.assertEqual(data["answeredCount"], 2)
+        self.assertEqual(data["surveyUsageCount"], 2)
+        self.assertEqual(data["versionsIncluded"], [1, 2])
+        self.assertEqual(data["numeric"]["average"], 25)
+        self.assertEqual(data["numeric"]["values"], [20, 30])
 
     def test_authentication_validation_and_owner_isolation(self):
         response = self.register(self.owner, "owner_user")

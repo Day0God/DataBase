@@ -90,6 +90,13 @@ COLLECTION_VALIDATORS = {
                 "validation": {"bsonType": "object"},
                 "jumps": {"bsonType": "array"},
                 "createdAt": {"bsonType": "date"},
+                "libraryQuestionId": {"bsonType": "objectId"},
+                "libraryVersionId": {"bsonType": "objectId"},
+                "libraryVersionNumber": {
+                    "bsonType": ["int", "long", "double"],
+                    "minimum": 1,
+                },
+                "libraryOwnerId": {"bsonType": "objectId"},
             },
         }
     },
@@ -114,6 +121,92 @@ COLLECTION_VALIDATORS = {
                 "idempotencyKey": {"bsonType": "string"},
                 "answers": {"bsonType": "array"},
                 "submittedAt": {"bsonType": "date"},
+            },
+        }
+    },
+    "question_banks": {
+        "$jsonSchema": {
+            "bsonType": "object",
+            "required": [
+                "ownerId",
+                "name",
+                "nameKey",
+                "description",
+                "createdAt",
+                "updatedAt",
+            ],
+            "properties": {
+                "ownerId": {"bsonType": "objectId"},
+                "name": {"bsonType": "string"},
+                "nameKey": {"bsonType": "string"},
+                "description": {"bsonType": "string"},
+                "createdAt": {"bsonType": "date"},
+                "updatedAt": {"bsonType": "date"},
+            },
+        }
+    },
+    "library_questions": {
+        "$jsonSchema": {
+            "bsonType": "object",
+            "required": [
+                "bankId",
+                "ownerId",
+                "type",
+                "currentVersionId",
+                "currentVersionNumber",
+                "sharedWith",
+                "createdAt",
+                "updatedAt",
+            ],
+            "properties": {
+                "bankId": {"bsonType": "objectId"},
+                "ownerId": {"bsonType": "objectId"},
+                "type": {"enum": ["single", "multiple", "text", "number"]},
+                "currentVersionId": {"bsonType": "objectId"},
+                "currentVersionNumber": {
+                    "bsonType": ["int", "long", "double"],
+                    "minimum": 1,
+                },
+                "sharedWith": {
+                    "bsonType": "array",
+                    "items": {"bsonType": "objectId"},
+                },
+                "createdAt": {"bsonType": "date"},
+                "updatedAt": {"bsonType": "date"},
+            },
+        }
+    },
+    "library_question_versions": {
+        "$jsonSchema": {
+            "bsonType": "object",
+            "required": [
+                "questionId",
+                "versionNumber",
+                "snapshot",
+                "createdBy",
+                "createdAt",
+            ],
+            "properties": {
+                "questionId": {"bsonType": "objectId"},
+                "versionNumber": {
+                    "bsonType": ["int", "long", "double"],
+                    "minimum": 1,
+                },
+                "parentVersionId": {"bsonType": ["objectId", "null"]},
+                "restoredFromVersionId": {"bsonType": ["objectId", "null"]},
+                "snapshot": {
+                    "bsonType": "object",
+                    "required": [
+                        "title",
+                        "type",
+                        "required",
+                        "options",
+                        "validation",
+                    ],
+                },
+                "changeSummary": {"bsonType": "string"},
+                "createdBy": {"bsonType": "objectId"},
+                "createdAt": {"bsonType": "date"},
             },
         }
     },
@@ -170,6 +263,11 @@ def initialize_database(db):
         unique=True,
         name="uk_questions_survey_order",
     )
+    db.questions.create_index(
+        [("libraryQuestionId", 1), ("surveyId", 1)],
+        sparse=True,
+        name="idx_questions_library_survey",
+    )
     db.submissions.create_index(
         [("surveyId", 1), ("submittedAt", -1)],
         name="idx_submissions_survey_time",
@@ -185,4 +283,30 @@ def initialize_database(db):
         unique=True,
         partialFilterExpression={"idempotencyKey": {"$type": "string"}},
         name="uk_submissions_idempotency",
+    )
+    db.question_banks.create_index(
+        [("ownerId", 1), ("nameKey", 1)],
+        unique=True,
+        name="uk_question_banks_owner_name",
+    )
+    db.question_banks.create_index(
+        [("ownerId", 1), ("updatedAt", -1)],
+        name="idx_question_banks_owner_updated",
+    )
+    db.library_questions.create_index(
+        [("ownerId", 1), ("updatedAt", -1)],
+        name="idx_library_questions_owner_updated",
+    )
+    db.library_questions.create_index(
+        [("bankId", 1), ("updatedAt", -1)],
+        name="idx_library_questions_bank_updated",
+    )
+    db.library_questions.create_index(
+        [("sharedWith", 1), ("updatedAt", -1)],
+        name="idx_library_questions_shared",
+    )
+    db.library_question_versions.create_index(
+        [("questionId", 1), ("versionNumber", 1)],
+        unique=True,
+        name="uk_library_question_versions_number",
     )

@@ -33,9 +33,14 @@ const copyLinkButton = document.querySelector("#copyLinkButton");
 const previewButton = document.querySelector("#previewButton");
 const shareHint = document.querySelector("#shareHint");
 const shareActions = document.querySelector("#shareActions");
+const libraryPicker = document.querySelector("#libraryPicker");
+const libraryPickerList = document.querySelector("#libraryPickerList");
+const libraryPickerError = document.querySelector("#libraryPickerError");
 
 let state = null;
 let busy = false;
+let pickerQuestions = [];
+let pickerDetail = null;
 
 function showError(value = "") {
   builderError.textContent = value;
@@ -226,6 +231,11 @@ function questionEditor(question, index, disabled) {
           <div>
             <strong>${typeLabel(question.type)}</strong>
             <div class="small muted">题目 ID：${escapeHtml(question.id)}</div>
+            ${
+              question.libraryQuestionId
+                ? `<span class="source-badge">题库题目 · v${question.libraryVersionNumber}</span>`
+                : ""
+            }
           </div>
           <div class="inline-actions">
             <button class="icon-button" type="button" data-action="move-up" aria-label="上移" ${index === 0 ? "disabled" : ""}>↑</button>
@@ -527,16 +537,24 @@ function settingsPayload() {
 }
 
 function questionsPayload() {
-  return state.questions.map((question, index) => ({
-    id: question.id,
-    type: question.type,
-    title: question.title,
-    required: question.required,
-    order: index,
-    options: question.options,
-    validation: question.validation,
-    jumps: question.jumps,
-  }));
+  return state.questions.map((question, index) => {
+    const payload = {
+      id: question.id,
+      type: question.type,
+      title: question.title,
+      required: question.required,
+      order: index,
+      options: question.options,
+      validation: question.validation,
+      jumps: question.jumps,
+    };
+    if (question.libraryQuestionId && question.libraryVersionId) {
+      payload.libraryQuestionId = question.libraryQuestionId;
+      payload.libraryVersionId = question.libraryVersionId;
+      payload.libraryVersionNumber = question.libraryVersionNumber;
+    }
+    return payload;
+  });
 }
 
 async function saveAll({ quiet = false } = {}) {
@@ -614,6 +632,125 @@ publishButton.addEventListener("click", publish);
 closeButton.addEventListener("click", closeSurvey);
 copyLinkButton.addEventListener("click", () => {
   copyText(`${window.location.origin}${state.survey.publicPath}`);
+});
+
+function pickerItem(question) {
+  const snapshot = question.currentVersion.snapshot;
+  return `
+    <button class="library-picker-item" type="button" data-picker-question="${escapeHtml(question.id)}">
+      <span>
+        <strong>${escapeHtml(snapshot.title)}</strong>
+        <small>${typeLabel(snapshot.type)} · ${escapeHtml(question.bankName)} · v${question.currentVersion.versionNumber}</small>
+      </span>
+      <span>${question.isShared ? `共享自 ${escapeHtml(question.ownerUsername)}` : "我的题目"} →</span>
+    </button>
+  `;
+}
+
+async function openLibraryPicker() {
+  libraryPickerError.hidden = true;
+  pickerDetail = null;
+  libraryPickerList.innerHTML = '<div class="loading">正在读取题库…</div>';
+  libraryPicker.hidden = false;
+  try {
+    pickerQuestions = await api("/api/library-questions?scope=all");
+    libraryPickerList.innerHTML = pickerQuestions.length
+      ? pickerQuestions.map(pickerItem).join("")
+      : '<div class="empty-state"><div><h3>题目库还是空的</h3><p>先到题目库创建或接收共享题目。</p></div></div>';
+  } catch (error) {
+    libraryPickerList.innerHTML = "";
+    libraryPickerError.textContent = error.message;
+    libraryPickerError.hidden = false;
+  }
+}
+
+function closeLibraryPicker() {
+  libraryPicker.hidden = true;
+  pickerDetail = null;
+}
+
+function renderPickerVersions() {
+  if (!pickerDetail) return;
+  libraryPickerList.innerHTML = `
+    <button class="button ghost small" type="button" data-picker-back>← 返回题目列表</button>
+    <div class="version-list">
+      ${pickerDetail.versions
+        .slice()
+        .reverse()
+        .map(
+          (version) => `
+            <button class="library-picker-item" type="button" data-picker-version="${escapeHtml(version.id)}">
+              <span>
+                <strong>v${version.versionNumber} · ${escapeHtml(version.snapshot.title)}</strong>
+                <small>${escapeHtml(version.changeSummary || "未填写版本说明")}</small>
+              </span>
+              <span>${version.versionNumber === pickerDetail.question.currentVersion.versionNumber ? "当前版本" : "使用此版本"} →</span>
+            </button>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function addLibraryQuestionVersion(version) {
+  const libraryQuestion = pickerDetail.question;
+  const snapshot = version.snapshot;
+  state.questions.push({
+    ...snapshot,
+    id: randomId("q_"),
+    options: snapshot.options.map((option) => ({ ...option })),
+    validation: { ...snapshot.validation },
+    order: state.questions.length,
+    jumps: [],
+    libraryQuestionId: libraryQuestion.id,
+    libraryVersionId: version.id,
+    libraryVersionNumber: version.versionNumber,
+  });
+  closeLibraryPicker();
+  renderQuestions();
+  toast(`已加入题库 v${version.versionNumber}，保存问卷后形成独立快照`);
+}
+
+document
+  .querySelector("#browseLibraryButton")
+  .addEventListener("click", openLibraryPicker);
+document
+  .querySelector("#closeLibraryPicker")
+  .addEventListener("click", closeLibraryPicker);
+libraryPicker.addEventListener("click", async (event) => {
+  if (event.target === libraryPicker) closeLibraryPicker();
+  if (event.target.closest("[data-picker-back]")) {
+    pickerDetail = null;
+    libraryPickerList.innerHTML = pickerQuestions.map(pickerItem).join("");
+    return;
+  }
+  const versionButton = event.target.closest("[data-picker-version]");
+  if (versionButton && pickerDetail) {
+    const version = pickerDetail.versions.find(
+      (item) => item.id === versionButton.dataset.pickerVersion,
+    );
+    if (version) addLibraryQuestionVersion(version);
+    return;
+  }
+  const item = event.target.closest("[data-picker-question]");
+  if (!item) return;
+  try {
+    libraryPickerList.innerHTML = '<div class="loading">正在读取版本…</div>';
+    pickerDetail = await api(
+      `/api/library-questions/${item.dataset.pickerQuestion}`,
+    );
+    renderPickerVersions();
+  } catch (error) {
+    libraryPickerList.innerHTML = "";
+    libraryPickerError.textContent = error.message;
+    libraryPickerError.hidden = false;
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !libraryPicker.hidden) {
+    closeLibraryPicker();
+  }
 });
 
 async function initialize() {

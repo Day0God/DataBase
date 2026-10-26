@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="管理 MongoForm 可复用题目和版本">
+    <title>题目库 · MongoForm</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/styles.css">
+    <script type="module" src="/js/library.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="/">
+        <span class="brand-mark">M</span>
+        <span>MongoForm</span>
+      </a>
+      <div class="header-actions">
+        <a class="button ghost small" href="/">我的问卷</a>
+        <span class="user-chip"><span class="user-dot"></span><span data-user-name></span></span>
+        <button class="button ghost small" type="button" data-logout>退出</button>
+      </div>
+    </header>
+
+    <main class="page">
+      <div id="libraryLoading" class="loading">正在读取题目库…</div>
+      <div id="libraryMessage" class="message-panel" hidden></div>
+      <div id="libraryContent" hidden>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">Reusable questions</p>
+            <h1>题目库</h1>
+            <p class="muted">保存常用题目，按版本复用和共享。试卷始终保留加入时的独立快照。</p>
+          </div>
+          <button class="button" id="newLibraryQuestionButton" type="button">＋ 新建题库题目</button>
+        </div>
+
+        <div class="library-shell">
+          <aside class="library-sidebar">
+            <section class="panel">
+              <div class="section-title compact-title">
+                <h3>我的题库</h3>
+                <span class="small muted" id="bankCount">0 个</span>
+              </div>
+              <div class="bank-list" id="bankList"></div>
+            </section>
+            <section class="panel">
+              <h3>新建题库</h3>
+              <form class="form-stack" id="bankForm">
+                <div class="form-error" id="bankError" hidden></div>
+                <div class="field">
+                  <label for="bankName">名称</label>
+                  <input id="bankName" maxlength="60" required placeholder="例如：课程反馈">
+                </div>
+                <div class="field">
+                  <label for="bankDescription">说明</label>
+                  <textarea id="bankDescription" maxlength="500" placeholder="这组题目适合哪些问卷"></textarea>
+                </div>
+                <button class="button secondary small" type="submit">创建题库</button>
+              </form>
+            </section>
+          </aside>
+
+          <section>
+            <div class="panel library-filter-panel">
+              <div class="library-filters">
+                <div class="field">
+                  <label for="libraryBankFilter">题库范围</label>
+                  <select id="libraryBankFilter">
+                    <option value="">全部题库</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="libraryScopeFilter">来源</label>
+                  <select id="libraryScopeFilter">
+                    <option value="all">全部</option>
+                    <option value="own">我创建的</option>
+                    <option value="shared">共享给我的</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="librarySearch">搜索题目</label>
+                  <input id="librarySearch" type="search" placeholder="输入题目标题">
+                </div>
+              </div>
+            </div>
+
+            <div class="library-question-grid" id="libraryQuestionList"></div>
+            <div class="empty-state" id="libraryQuestionEmpty" hidden>
+              <div>
+                <h3>还没有可复用题目</h3>
+                <p>创建一道常用题，或请同事共享题目给你。</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <div class="dialog-backdrop" id="libraryQuestionDialog" hidden>
+      <div class="dialog library-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="libraryQuestionDialogTitle">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow" id="libraryQuestionKicker">Question version</p>
+            <h2 id="libraryQuestionDialogTitle">题目详情</h2>
+          </div>
+          <button class="icon-button" id="closeLibraryQuestionDialog" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="form-error" id="libraryQuestionError" hidden></div>
+        <div id="libraryQuestionDetail"></div>
+      </div>
+    </div>
+
+    <div class="dialog-backdrop" id="libraryCreateDialog" hidden>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="libraryCreateTitle">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">New reusable question</p>
+            <h2 id="libraryCreateTitle">新建题库题目</h2>
+          </div>
+          <button class="icon-button" id="closeLibraryCreateDialog" type="button" aria-label="关闭">×</button>
+        </div>
+        <form class="form-stack" id="libraryQuestionForm">
+          <div class="form-error" id="libraryCreateError" hidden></div>
+          <div class="two-columns">
+            <div class="field">
+              <label for="libraryCreateBank">所属题库</label>
+              <select id="libraryCreateBank" required></select>
+            </div>
+            <div class="field">
+              <label for="libraryCreateType">题型</label>
+              <select id="libraryCreateType">
+                <option value="single">单选题</option>
+                <option value="multiple">多选题</option>
+                <option value="text">文本填空</option>
+                <option value="number">数字填空</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="libraryCreateTitleInput">题目文本</label>
+            <input id="libraryCreateTitleInput" maxlength="300" required>
+          </div>
+          <label class="checkbox-row">
+            <input id="libraryCreateRequired" type="checkbox" checked>
+            <span>默认设为必答题</span>
+          </label>
+          <div id="libraryCreateTypeFields"></div>
+          <div class="field">
+            <label for="libraryChangeSummary">版本说明</label>
+            <input id="libraryChangeSummary" maxlength="300" placeholder="例如：创建常用年龄题">
+          </div>
+          <div class="button-row">
+            <button class="button" type="submit">保存到题目库</button>
+            <button class="button secondary" id="cancelLibraryCreate" type="button">取消</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+  </body>
+</html>

@@ -9,6 +9,8 @@ __pycache__/
 .pytest_cache/
 .report-render*/
 .source-docx-render/
+.pdf-corrected-check/
+.pdf-temp/
 MongoForm-第一阶段提交/
 MongoForm-第一阶段提交.zip
 .DS_Store

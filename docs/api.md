@@ -415,3 +415,143 @@
 - 多选项的百分比可以合计超过 100%，因为一名填写者可选择多个选项。
 - 被跳转规则跳过的题目 `answeredCount` 为 0，不计入该题统计。
 - 当前前端支持“整份问卷”和“某一道题”筛选。
+
+## 7. 第二阶段题目库 API
+
+以下接口都要求登录。
+
+### `GET /api/question-banks`
+
+返回当前用户的题库。首次访问时自动创建“我的题库”。
+
+### `POST /api/question-banks`
+
+```json
+{
+  "name": "课程反馈常用题",
+  "description": "可跨问卷复用"
+}
+```
+
+### `PATCH /api/question-banks/:id`
+
+更新题库名称或说明。当前用户必须是题库所有者。
+
+### `GET /api/library-questions`
+
+查询可访问的逻辑题目：
+
+```text
+/api/library-questions?scope=all
+/api/library-questions?scope=own
+/api/library-questions?scope=shared
+/api/library-questions?bankId=<题库ID>
+```
+
+### `POST /api/library-questions`
+
+```json
+{
+  "bankId": "6720...",
+  "question": {
+    "type": "number",
+    "title": "你的年龄是？",
+    "required": true,
+    "validation": {
+      "min": 0,
+      "max": 120,
+      "integer": true
+    }
+  },
+  "changeSummary": "创建常用题"
+}
+```
+
+创建逻辑题目和 v1 版本。
+
+### `GET /api/library-questions/:id`
+
+返回逻辑题目、当前版本和全部历史版本。版本包含：
+
+- `versionNumber`
+- `parentVersionId`
+- `restoredFromVersionId`
+- `snapshot`
+- `changeSummary`
+
+### `POST /api/library-questions/:id/versions`
+
+创建新版本：
+
+```json
+{
+  "baseVersionId": "6720...",
+  "snapshot": {
+    "title": "年龄（成年）",
+    "type": "number",
+    "required": true,
+    "options": [],
+    "validation": {
+      "min": 18,
+      "max": 120,
+      "integer": true
+    }
+  },
+  "changeSummary": "限制为成年人"
+}
+```
+
+只有所有者可以创建版本。同一版本族不能修改题型。
+
+### `POST /api/library-questions/:id/restore`
+
+```json
+{
+  "versionId": "6720...",
+  "changeSummary": "恢复旧版文字"
+}
+```
+
+不会覆盖当前版本，而是生成一个后继版本，并记录 `restoredFromVersionId`。
+
+### `POST /api/library-questions/:id/share`
+
+```json
+{
+  "username": "colleague"
+}
+```
+
+共享后，对方可以查看题目和版本，并将任一可访问版本加入自己的问卷；对方不能修改所有者题目。
+
+### `GET /api/library-questions/:id/usages`
+
+逻辑题目的所有者可以查看所有问卷中的使用位置和版本号；被共享用户只能查看自己拥有的问卷。
+
+### `GET /api/library-questions/:id/stats`
+
+汇总当前用户拥有的多份问卷中该题目的回答。可添加 `?versionId=<版本ID>` 只查看一个版本。
+
+返回内容包括：
+
+- `surveyUsageCount`
+- `totalSubmissions`
+- `answeredCount`
+- `versionsIncluded`
+- 与题型对应的 `options`、`textValues` 或 `numeric`
+
+跨问卷统计不返回其他用户的问卷或回答数据。
+
+### 问卷中的题库来源
+
+`PUT /api/surveys/:id/questions` 的题目可以携带：
+
+```json
+{
+  "libraryQuestionId": "6720...",
+  "libraryVersionId": "6721...",
+  "libraryVersionNumber": 2
+}
+```
+
+服务端验证当前用户有访问权、版本属于逻辑题目，并验证题目内容与版本快照一致后才保存来源关系。问卷内仍保存完整题目快照。

@@ -17,6 +17,7 @@
       </a>
       <div class="header-actions">
         <a class="button ghost small" href="/">我的问卷</a>
+        <a class="button ghost small" href="/library">题目库</a>
         <span class="user-chip"><span class="user-dot"></span><span data-user-name></span></span>
         <button class="button ghost small" type="button" data-logout>退出</button>
       </div>
@@ -83,6 +84,7 @@
               <button class="button secondary small" type="button" data-add-type="multiple">＋ 多选题</button>
               <button class="button secondary small" type="button" data-add-type="text">＋ 文本填空</button>
               <button class="button secondary small" type="button" data-add-type="number">＋ 数字填空</button>
+              <button class="button secondary small" id="browseLibraryButton" type="button">＋ 从题库添加</button>
             </div>
             <div class="builder-main" id="questionList"></div>
             <div class="empty-state" id="questionEmpty" hidden>
@@ -121,6 +123,21 @@
         </div>
       </div>
     </main>
+
+    <div class="dialog-backdrop" id="libraryPicker" hidden>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="libraryPickerTitle">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">Question library</p>
+            <h2 id="libraryPickerTitle">从题库添加题目</h2>
+          </div>
+          <button class="icon-button" id="closeLibraryPicker" type="button" aria-label="关闭">×</button>
+        </div>
+        <p class="small muted">这里列出自己保存和他人共享给你的题目。加入问卷时会保存当前版本的独立快照。</p>
+        <div class="form-error" id="libraryPickerError" hidden></div>
+        <div class="library-picker-list" id="libraryPickerList"></div>
+      </div>
+    </div>
 
     <div class="toast" id="toast" hidden></div>
   </body>

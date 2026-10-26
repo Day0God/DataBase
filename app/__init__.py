@@ -88,6 +88,10 @@ def create_app(database=None):
     def stats_page(survey_id):
         return send_from_directory(PUBLIC_DIR, "stats.html")
 
+    @app.get("/library")
+    def library_page():
+        return send_from_directory(PUBLIC_DIR, "library.html")
+
     @app.get("/css/<path:filename>")
     def css_files(filename):
         return send_from_directory(PUBLIC_DIR / "css", filename)

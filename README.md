@@ -1,6 +1,6 @@
 # MongoForm 在线问卷系统
 
-一个完整可运行的简化版在线问卷系统。注册用户可以创建、编辑、发布和关闭问卷；登录用户可以通过 `/survey/<slug>` 链接填写；创建者可以查看整卷和逐题统计。
+一个完整可运行的简化版在线问卷系统。注册用户可以创建、编辑、发布和关闭问卷；登录用户可以通过 `/survey/<slug>` 链接填写；创建者可以查看整卷和逐题统计。第二阶段新增可复用题目库、题目共享、不可变版本历史和单题跨问卷统计。
 
 系统使用 **Python + Flask + MongoDB 原生驱动 PyMongo**，没有使用任何现成问卷框架或关系数据库。
 
@@ -18,6 +18,11 @@
 - 整卷统计与指定题目筛选
 - MongoDB JSON Schema 集合校验、TTL 会话索引和业务唯一索引
 - 自动化单元测试和真实 MongoDB 集成测试
+- 用户题库与题目版本管理
+- 按用户名将题目共享给其他用户
+- 问卷保存加入时的题目快照，题库改版不影响旧问卷
+- 查看版本谱系、恢复历史版本和使用位置
+- 当前用户拥有的问卷中，同一道题库题目的跨问卷统计
 
 ## 技术栈
 
@@ -89,6 +94,8 @@ python server.py
 
 打开 [http://127.0.0.1:3000](http://127.0.0.1:3000)。
 
+登录后打开 [http://127.0.0.1:3000/library](http://127.0.0.1:3000/library) 管理常用题目。
+
 ### 查看用户注册时间
 
 登录后的“我的问卷”页面会在标题下方显示当前账号及注册时间。后端接口 `GET /api/auth/me` 也会返回 `createdAt`。
@@ -146,7 +153,7 @@ python -m unittest discover -s test -v
 预期结果：
 
 ```text
-Ran 13 tests
+Ran 16 tests
 OK
 ```
 
@@ -177,6 +184,7 @@ Node.js 24（仅用于前端 JavaScript 语法检查）
 │  ├─ builder.html       # 问卷编辑器
 │  ├─ survey.html        # 一次一题填写页
 │  ├─ stats.html         # 统计页
+│  ├─ library.html       # 题库、版本、共享和跨问卷统计
 │  ├─ css/styles.css
 │  └─ js/
 ├─ test/
@@ -196,6 +204,9 @@ Node.js 24（仅用于前端 JavaScript 语法检查）
 - 同一问卷内，跳转规则按数组顺序使用第一条命中的规则。
 - 匿名问卷不保存 `respondentId`；仅保存不可逆 HMAC 去重键，用于账号维度的重复提交控制。
 - 问卷标题、说明、截止时间和匿名/多次填写设置可以继续更新，不改变历史题目结构。
+- 题库版本不可原地修改；修改或恢复历史都会生成新版本。
+- 问卷只保存题库题目的独立快照。题库产生新版本后，已加入问卷的内容保持不变。
+- 跨问卷统计只汇总当前用户拥有的问卷，不向共享者暴露其他用户的回答。
 
 ## 文档
 
@@ -206,5 +217,8 @@ Node.js 24（仅用于前端 JavaScript 语法检查）
 - [测试用例与结果](docs/test-cases.md)
 - [第一阶段目标逐项自查](docs/phase1-compliance-check.md)
 - [项目完成报告](docs/project-report.md)
+- [第二阶段项目报告](docs/phase2-project-report.md)
+- [第二阶段需求实现记录](docs/phase2-requirements-trace.md)
+- [第一阶段与第二阶段可视化测试记录](docs/phase2-manual-test-record.md)
 - [AI 使用记录](docs/ai-usage-log.md)
 - [提交清单](docs/submission-checklist.md)

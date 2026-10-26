@@ -38,6 +38,74 @@ else:
     user = {"_id": inserted.inserted_id}
 
 now = datetime.now(timezone.utc)
+
+old_banks = list(
+    db.question_banks.find({"ownerId": user["_id"]}, {"_id": 1})
+)
+old_library_questions = list(
+    db.library_questions.find(
+        {"bankId": {"$in": [bank["_id"] for bank in old_banks]}},
+        {"_id": 1},
+    )
+)
+db.library_question_versions.delete_many(
+    {"questionId": {"$in": [item["_id"] for item in old_library_questions]}}
+)
+db.library_questions.delete_many(
+    {"_id": {"$in": [item["_id"] for item in old_library_questions]}}
+)
+db.question_banks.delete_many(
+    {"_id": {"$in": [bank["_id"] for bank in old_banks]}}
+)
+
+bank_id = ObjectId()
+library_question_id = ObjectId()
+library_version_id = ObjectId()
+db.question_banks.insert_one(
+    {
+        "_id": bank_id,
+        "ownerId": user["_id"],
+        "name": "常用题目",
+        "nameKey": "常用题目",
+        "description": "演示可复用题目与版本快照",
+        "createdAt": now,
+        "updatedAt": now,
+    }
+)
+library_snapshot = {
+    "title": "你的年龄是？",
+    "type": "number",
+    "required": True,
+    "options": [],
+    "validation": {"min": 0, "max": 120, "integer": True},
+}
+db.library_question_versions.insert_one(
+    {
+        "_id": library_version_id,
+        "questionId": library_question_id,
+        "versionNumber": 1,
+        "parentVersionId": None,
+        "restoredFromVersionId": None,
+        "snapshot": library_snapshot,
+        "changeSummary": "演示题库初始版本",
+        "createdBy": user["_id"],
+        "createdAt": now,
+    }
+)
+db.library_questions.insert_one(
+    {
+        "_id": library_question_id,
+        "bankId": bank_id,
+        "ownerId": user["_id"],
+        "type": "number",
+        "currentVersionId": library_version_id,
+        "currentVersionNumber": 1,
+        "sharedWith": [],
+        "createdAt": now,
+        "updatedAt": now,
+    }
+)
+
 survey_id = ObjectId()
 survey = {
     "_id": survey_id,
@@ -123,6 +191,16 @@ raw_questions = [
     },
 ]
 questions = normalize_questions(raw_questions)
+for question in questions:
+    if question["id"] == "q_age0000001":
+        question.update(
+            {
+                "libraryQuestionId": library_question_id,
+                "libraryVersionId": library_version_id,
+                "libraryVersionNumber": 1,
+                "libraryOwnerId": user["_id"],
+            }
+        )
 db.questions.insert_many(
     [
         {**question, "surveyId": survey_id, "createdAt": now}
@@ -133,3 +211,4 @@ db.questions.insert_many(
 print(f"演示用户：{demo_username} / {demo_password}")
 print(f"问卷链接：/survey/{survey['slug']}")
 print(f"问卷 ID：{survey_id}")
+print(f"题目库：/library")
