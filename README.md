@@ -221,5 +221,6 @@ Node.js 24（仅用于前端 JavaScript 语法检查）
 - [第二阶段需求实现记录](docs/phase2-requirements-trace.md)
 - [第一阶段与第二阶段可视化测试记录](docs/phase2-manual-test-record.md)
 - [复杂问卷、题库与统计验收记录](docs/phase2-rich-test-record.md)
+- [完整手工测试指南](docs/manual-test-guide.md)
 - [AI 使用记录](docs/ai-usage-log.md)
 - [提交清单](docs/submission-checklist.md)

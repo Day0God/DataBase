@@ -1,5 +1,6 @@
 """Create a reproducible rich survey and question-library test dataset."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -10,8 +11,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import create_app
 
 
-MONGODB_URI = "mongodb://127.0.0.1:27018"
-DATABASE_NAME = "dm_rich_visual_20261027"
+MONGODB_URI = os.environ.get(
+    "RICH_TEST_MONGODB_URI",
+    "mongodb://127.0.0.1:27018",
+)
+DATABASE_NAME = os.environ.get(
+    "RICH_TEST_DATABASE_NAME",
+    "dm_rich_visual_20261027",
+)
 PASSWORD = "RichTest123"
 
 QUESTIONS = [
