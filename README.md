@@ -153,7 +153,7 @@ python -m unittest discover -s test -v
 预期结果：
 
 ```text
-Ran 16 tests
+Ran 17 tests
 OK
 ```
 
@@ -220,5 +220,6 @@ Node.js 24（仅用于前端 JavaScript 语法检查）
 - [第二阶段项目报告](docs/phase2-project-report.md)
 - [第二阶段需求实现记录](docs/phase2-requirements-trace.md)
 - [第一阶段与第二阶段可视化测试记录](docs/phase2-manual-test-record.md)
+- [复杂问卷、题库与统计验收记录](docs/phase2-rich-test-record.md)
 - [AI 使用记录](docs/ai-usage-log.md)
 - [提交清单](docs/submission-checklist.md)

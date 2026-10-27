@@ -410,6 +410,54 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(data["numeric"]["average"], 25)
         self.assertEqual(data["numeric"]["values"], [20, 30])
 
+    def test_library_snapshot_can_have_questionnaire_specific_jump(self):
+        self.assertEqual(self.register(self.owner, "jump_library_owner").status_code, 201)
+        library = self.create_library_number_question("带跳转的题库题目")
+        created = self.post(
+            self.owner,
+            "/api/surveys",
+            {
+                "title": "题库题目加问卷内跳转",
+                "description": "",
+                "allowAnonymous": True,
+                "allowMultipleResponses": False,
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        survey = created.get_json()["data"]
+        version = library["currentVersion"]
+        first_question = {
+            **version["snapshot"],
+            "id": "q_jump000001",
+            "order": 0,
+            "jumps": [
+                {
+                    "condition": {"operator": "gte", "value": 18},
+                    "targetQuestionId": "q_jump000002",
+                }
+            ],
+            "libraryQuestionId": library["id"],
+            "libraryVersionId": version["id"],
+            "libraryVersionNumber": version["versionNumber"],
+        }
+        second_question = {
+            "id": "q_jump000002",
+            "type": "text",
+            "title": "后续说明",
+            "required": True,
+            "validation": {"minLength": 1, "maxLength": 100},
+            "jumps": [],
+        }
+        saved = self.put(
+            self.owner,
+            f"/api/surveys/{survey['id']}/questions",
+            {"questions": [first_question, second_question]},
+        )
+        self.assertEqual(saved.status_code, 200, saved.get_json())
+        saved_first = saved.get_json()["data"][0]
+        self.assertEqual(saved_first["libraryQuestionId"], library["id"])
+        self.assertEqual(saved_first["jumps"][0]["condition"]["operator"], "gte")
+
     def test_authentication_validation_and_owner_isolation(self):
         response = self.register(self.owner, "owner_user")
         self.assertEqual(response.status_code, 201)

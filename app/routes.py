@@ -248,7 +248,7 @@ def attach_library_references(normalized_questions, raw_questions):
             question.get(field) == snapshot.get(field)
             for field in ("title", "type", "required", "options", "validation")
         )
-        if not unchanged or question["jumps"]:
+        if not unchanged:
             continue
         question.update(
             {
