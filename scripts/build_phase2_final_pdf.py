@@ -301,7 +301,12 @@ def markdown_flowables(markdown, include_title=False):
                 index += 1
                 continue
             style = STYLES["h1"] if level <= 1 else STYLES["h2"] if level == 2 else STYLES["h3"]
-            result.append(Paragraph(inline(heading.group(2)), style))
+            heading_text = re.sub(
+                r"^\d+(?:\.\d+)?\.?\s*",
+                "",
+                heading.group(2),
+            )
+            result.append(Paragraph(inline(heading_text), style))
             index += 1
             continue
 
