@@ -218,6 +218,8 @@ Node.js 24（仅用于前端 JavaScript 语法检查）
 - [第一阶段目标逐项自查](docs/phase1-compliance-check.md)
 - [项目完成报告](docs/project-report.md)
 - [第二阶段项目报告](docs/phase2-project-report.md)
+- [第二阶段最终报告源文件](docs/phase2-final-report.md)
+- [第二阶段最终报告 PDF](2026_ECNU_PJ1_2_徐文杰.pdf)
 - [第二阶段需求实现记录](docs/phase2-requirements-trace.md)
 - [第一阶段与第二阶段可视化测试记录](docs/phase2-manual-test-record.md)
 - [复杂问卷、题库与统计验收记录](docs/phase2-rich-test-record.md)

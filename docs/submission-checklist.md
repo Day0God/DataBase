@@ -52,3 +52,5 @@
 - Markdown 版：`docs/project-report.md`
 - Word 版：`docs/MongoForm-第一阶段项目报告.docx`
 - 第二阶段报告：`docs/phase2-project-report.md`
+- 第二阶段完整报告源文件：`docs/phase2-final-report.md`
+- 第二阶段最终 PDF：`2026_ECNU_PJ1_2_徐文杰.pdf`

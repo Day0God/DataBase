@@ -10,6 +10,7 @@ __pycache__/
 .report-render*/
 .source-docx-render/
 .pdf-corrected-check/
+.pdf-phase2-check/
 .pdf-temp/
 MongoForm-第一阶段提交/
 MongoForm-第一阶段提交.zip
